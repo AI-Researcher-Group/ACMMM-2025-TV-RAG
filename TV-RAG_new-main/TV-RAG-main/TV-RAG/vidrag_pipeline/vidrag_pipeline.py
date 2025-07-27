@@ -288,17 +288,7 @@ tokenizer, model, image_processor, max_length = load_pretrained_model(
     overwrite_config=overwrite_config) # Add any other thing you want to pass in llava_model_args
 model.eval()
 conv_template = "qwen_1_5"  # Make sure you use correct chat template for different models
-# device = "cuda"
-# overwrite_config = {}
-# tokenizer, model, image_processor, max_length = load_pretrained_model(
-#     "/root/autodl-tmp/Video-RAG-master/LLaVA-NeXT/models/models--lmms-lab--LLaVA-Video-72B-Qwen2/snapshots/226cce801d38f1ace080cbbf335a573500a9ce6f", 
-#     None, 
-#     "LLaVA-Video-7B-Qwen2", 
-#     torch_dtype="bfloat16", 
-#     device_map="auto", 
-#     overwrite_config=overwrite_config) # Add any other thing you want to pass in llava_model_args
-# model.eval()
-# conv_template = "qwen_1_5"  # Make sure you use correct chat template for different models
+
 def llava_inference(qs, video):
     if video is not None:
         time_instruciton = f"The video lasts for {video_time:.2f} seconds, and {len(video[0])} frames are uniformly sampled from it. These frames are located at {frame_time}.Please answer the following questions related to this video."
@@ -434,13 +424,7 @@ for question in questions:
     raw_video = [f for f in frames]
     video = image_processor.preprocess(frames, return_tensors="pt")["pixel_values"].cuda().bfloat16()
     video = [video]
-    # key_frames, key_indices = select_key_frames(frames, text, clip_model, clip_processor)
-    # max_frames_num = len(key_frames)
-    # raw_video = [f for f in frames]
-    # frames = key_frames
-    
-    # video = image_processor.preprocess(frames, return_tensors="pt")["pixel_values"].cuda().bfloat16()
-    # video = [video]
+   
     start_time = time.time()
     USE_DET = True
     USE_OCR = True
@@ -550,15 +534,6 @@ for question in questions:
             except:
                 request_det = None
                 clip_text = ["A picture of object"]
-
-            # clip_inputs = clip_processor(text=clip_text, return_tensors="pt", padding=True, truncation=True).to(clip_model.device)
-            # clip_img_feats = clip_model.get_image_features(video_tensor)
-            # with torch.no_grad():
-            #     text_features = clip_model.get_text_features(**clip_inputs)
-            #     similarities = (clip_img_feats @ text_features.T).squeeze(0).mean(1).cpu()
-            #     similarities = np.array(similarities, dtype=np.float64)
-            #     alpha = beta * (len(similarities) / 16)
-            #     similarities = similarities * alpha / np.sum(similarities)
 
             clip_inputs = clip_processor(text=clip_text, return_tensors="pt", padding=True, truncation=True).to(clip_model.device)
             clip_img_feats = clip_model.get_image_features(video_tensor)
