@@ -51,7 +51,7 @@ import numpy.typing as npt
 
 if not hasattr(npt, 'NDArray'):
     npt.NDArray = np.ndarray
-from PIL import Image  # 现在可以正常导入
+from PIL import Image  
 
 from sklearn.mixture import GaussianMixture
 # ... rest of your original code ...import numpy as np
@@ -62,39 +62,35 @@ warnings.filterwarnings('ignore')
 import numpy as np
 from rank_bm25 import BM25Okapi
 
-def retrieve_documents_with_temporal_reranking(
-    documents,
-    query,
-    timestamps,
-    query_time,
-    alpha=1.0,
-    top_k=5
-):
+def retrieve_documents_with_temporal_rankning(documents, queries, alpha=0.1, max_k=10):
     """
-    Temporal-aware BM25 text retrieval based on soft temporal bias (Equation 5 & 6 from the paper).
+    Retrieve documents using GMM-based automatic top-k selection.
     
     Args:
-        documents: List of strings (OCR/ASR segments)
-        query: String (user query)
-        timestamps: List of floats or ints, one per document
-        query_time: Float or int indicating the time position of the query
-        alpha: Temporal decay hyperparameter (higher means stronger temporal bias)
-        top_k: Number of top documents to return (default: 5)
-
+        documents: List of documents
+        queries: List of queries or a single query string
+        alpha: Time decay factor
+        max_k: Maximum number of components to try for GMM
+    
     Returns:
-        top_documents: List of top-k retrieved documents
-        top_indices: List of their indices
-        weights: Final re-weighted scores for each document
+        top_documents: List of retrieved documents
+        idx: Indices of retrieved documents
+        k_star: Optimal k determined by GMM+BIC
     """
     if len(documents) == 0:
-        return [], [], []
-
+        return [], [], 0
+        
     # Tokenize documents for BM25
     tokenized_docs = [doc.split() for doc in documents]
     bm25 = BM25Okapi(tokenized_docs)
-    tokenized_query = query.split()
-
-    # Get BM25 similarity scores
+    
+    # Handle different query formats
+    if isinstance(queries, list):
+        query_text = " ".join(queries)
+    else:
+        query_text = queries
+    
+    tokenized_query = query_text.split()
     bm25_scores = np.array(bm25.get_scores(tokenized_query))  # shape: [N]
 
     # Temporal decay weights: exp(-α * |T_q - T_i|)
@@ -157,26 +153,7 @@ def retrieve_documents_with_temporal_reranking(
 #     if np.all(weighted_scores == 0):
 #         return [], [], 0
     
-#     # Prepare scores for GMM (reshape to 2D array for sklearn)
-#     scores_for_gmm = weighted_scores.reshape(-1, 1)
     
-#     # Determine optimal K using GMM+BIC
-#     k_star = find_optimal_k_gmm(scores_for_gmm, max_k)
-    
-#     # If k_star is 0 (couldn't determine optimal k), use a default approach
-#     if k_star == 0:
-#         # Fallback: select top 3 or fewer if there are less than 3 documents
-#         k = min(3, len(documents))
-#         top_indices = np.argsort(-weighted_scores)[:k]
-#     else:
-#         # Sort scores and take top-k_star
-#         top_indices = np.argsort(-weighted_scores)[:k_star]
-    
-#     # Get the selected documents
-#     idx = top_indices.tolist()
-#     top_documents = [documents[i] for i in idx]
-    
-#     return top_documents, idx, k_star
 
 # def find_optimal_k_gmm(data, max_k=10):
 #     """
