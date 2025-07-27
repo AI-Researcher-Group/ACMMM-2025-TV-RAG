@@ -551,19 +551,27 @@ for question in questions:
                 request_det = None
                 clip_text = ["A picture of object"]
 
+            # clip_inputs = clip_processor(text=clip_text, return_tensors="pt", padding=True, truncation=True).to(clip_model.device)
+            # clip_img_feats = clip_model.get_image_features(video_tensor)
+            # with torch.no_grad():
+            #     text_features = clip_model.get_text_features(**clip_inputs)
+            #     similarities = (clip_img_feats @ text_features.T).squeeze(0).mean(1).cpu()
+            #     similarities = np.array(similarities, dtype=np.float64)
+            #     alpha = beta * (len(similarities) / 16)
+            #     similarities = similarities * alpha / np.sum(similarities)
+
             clip_inputs = clip_processor(text=clip_text, return_tensors="pt", padding=True, truncation=True).to(clip_model.device)
             clip_img_feats = clip_model.get_image_features(video_tensor)
             with torch.no_grad():
                 text_features = clip_model.get_text_features(**clip_inputs)
-                similarities = (clip_img_feats @ text_features.T).squeeze(0).mean(1).cpu()
-                similarities = np.array(similarities, dtype=np.float64)
-                alpha = beta * (len(similarities) / 16)
-                similarities = similarities * alpha / np.sum(similarities)
-
+                sim_matrix = (clip_img_feats @ text_features.T).cpu() 
+            similarities = sim_matrix.mean(dim=1).numpy()  
+            p_all = similarities / (np.sum(similarities) + 1e-8)
+            frame_entropies = -p_all * np.log(p_all + 1e-8)  
+            weighted_scores = similarities * frame_entropies  
             del clip_inputs, clip_img_feats, text_features
             torch.cuda.empty_cache()
-
-            det_top_idx = [idx for idx in range(max_frames_num) if similarities[idx] > clip_threshold]
+            det_top_idx = [i for i, score in enumerate(weighted_scores) if score > clip_threshold]
                 
             if request_det is not None and len(request_det) > 0:
                 # process directly
@@ -597,7 +605,7 @@ for question in questions:
                 if request_det is not None and len(request_det) > 0:
                     ocr_query.extend(request_det)
                 # ocr_docs, _ = retrieve_documents_with_dynamic(ocr_docs_total, ocr_query, threshold=rag_threshold)
-                ocr_docs, _, _ = retrieve_documents_with_dynamic(ocr_docs_total, ocr_query)
+                ocr_docs, _, _ = retrieve_documents_with_temporal_rankning(ocr_docs_total, ocr_query, threshold=rag_threshold)
 
         # ASR fetch
         if USE_ASR:
@@ -611,7 +619,7 @@ for question in questions:
                 if request_asr is not None:
                     asr_query.append(request_asr)
                 # asr_docs, _ = retrieve_documents_with_dynamic(asr_docs_total, asr_query, threshold=rag_threshold)
-                asr_docs, _, _ = retrieve_documents_with_dynamic(asr_docs_total, asr_query)
+                asr_docs, _, _ = retrieve_documents_with_temporal_rankning(asr_docs_total, asr_query,threshold=rag_threshold)
     
     
     if USE_DET and len(det_docs) > 0:
