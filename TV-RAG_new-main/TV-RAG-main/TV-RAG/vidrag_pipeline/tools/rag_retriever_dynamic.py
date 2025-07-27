@@ -92,7 +92,8 @@ def retrieve_documents_with_temporal_rankning(documents, queries, alpha=0.1, max
     
     tokenized_query = query_text.split()
     bm25_scores = np.array(bm25.get_scores(tokenized_query))  # shape: [N]
-
+    timestamps = np.arange(len(documents))
+    query_time = timestamps[-1]
     # Temporal decay weights: exp(-α * |T_q - T_i|)
     timestamps = np.array(timestamps)
     time_diffs = np.abs(timestamps - query_time)
