@@ -503,6 +503,29 @@ for question in questions:
     }
     Note that you don't need to answer the question in this step, so you don't need any infomation about the video of image. You only need to provide your retrieve request (it's optional), and I will help you retrieve the infomation you want. Please provide the json format.'''
     print(f'------- the question is {question}------- ')
+    def generate_query_context(question: str) -> str:
+        """
+        Generates a helpful background context and 2-3 paraphrased variants of the input question
+        to enhance query understanding for downstream reasoning.
+    
+        Args:
+            question (str): Original user query.
+    
+        Returns:
+            str: A formatted string containing the generated background context and paraphrased questions.
+        """
+        prompt = (
+            "Given a question, first generate a helpful background context. "
+            "Then, provide 2-3 alternative phrasings of the question with similar meaning.\n\n"
+            f"Question: {question}\n\n<background>\n"
+        )
+    
+        result = llava_inference(prompt)[0]  # assuming llava_inference returns a tuple
+        return result.strip()
+    
+    
+    context = generate_query_context(question)
+
     qs = ""
 
     if USE_ASR or USE_DET or USE_OCR:
@@ -601,9 +624,19 @@ for question in questions:
         qs += "\nVideo Automatic Speech Recognition information (given in chronological order of the video): " + " ".join(asr_docs)
     if USE_OCR and len(ocr_docs) > 0:
         qs += "\nVideo OCR information (given in chronological order of the video): " + "; ".join(ocr_docs)
+    qs += (
+    "\nThe following is background knowledge and reformulated versions of the question "
+    "to help you better understand and answer it:\n\n"
+    + context.strip() + "\n\n"
+    )
     
-    qs += "Select the best answer to the following multiple-choice question based on the video and the information (if given). Respond with only the letter (A, B, C, or D) of the correct option. Question: " + text + '\n' + " ".join(option) + '\nThe best answer is:'
-
+    qs += (
+        "Select the best answer to the following multiple-choice question based on the video "
+        "and the information (if given). Respond with only the letter (A, B, C, or D) of the correct option.\n\n"
+    )
+    qs += f"Question: {text}\n"
+    qs += " ".join(option) + "\n"
+    qs += "The best answer is:"
     print(f'-----starting the inference -------')
     (result,) = llava_inference(qs, video)
     result = result.strip('.')
