@@ -2,9 +2,41 @@ from transformers import AutoTokenizer, AutoModel
 import torch
 import numpy as np
 import faiss
+from transformers import CLIPModel, CLIPProcessor
+
+clip_model = CLIPModel.from_pretrained("/your/path/clip-model", torch_dtype=torch.float16, device_map="auto")
+clip_processor = CLIPProcessor.from_pretrained("/your/path/clip-model")
 
 tokenizer = AutoTokenizer.from_pretrained('facebook/contriever')
 model = AutoModel.from_pretrained('facebook/contriever')
+
+def get_best_query_time_with_clip_text(clip_model, clip_processor, documents, query_text):
+    """
+    使用 CLIP 计算 query_text 与所有 document 文本的相似度，返回最相似的文档索引作为 query_time。
+    
+    Args:
+        clip_model: CLIPModel
+        clip_processor: CLIPProcessor
+        documents: List of text documents
+        query_text: Single query string
+
+    Returns:
+        best_idx: Index of document most similar to query (int)
+    """
+    # Tokenize all texts
+    all_texts = [query_text] + documents  # [query, doc1, doc2, ..., docN]
+    clip_inputs = clip_processor(text=all_texts, return_tensors="pt", padding=True, truncation=True).to(clip_model.device)
+
+    with torch.no_grad():
+        all_text_features = clip_model.get_text_features(**clip_inputs)  # [N+1, D]
+        all_text_features = all_text_features / all_text_features.norm(p=2, dim=-1, keepdim=True)
+
+    query_feat = all_text_features[0]        # [D]
+    doc_feats = all_text_features[1:]        # [N, D]
+
+    sim_scores = (doc_feats @ query_feat.T).squeeze(-1).cpu().numpy()  # [N]
+    best_idx = int(np.argmax(sim_scores))
+    return best_idx
 
 def text_to_vector(text, max_length=512):
     inputs = tokenizer(text, return_tensors='pt', truncation=True, padding=True, max_length=max_length)
@@ -62,6 +94,32 @@ warnings.filterwarnings('ignore')
 import numpy as np
 from rank_bm25 import BM25Okapi
 
+def get_weighted_query_time(clip_model, clip_processor, documents, query_text, timestamps, 
+                             w1=1/3, w2=1/3, w3=1/3):
+    """
+    根据三种策略（尾部、头部、CLIP文本匹配）加权平均确定 query_time。
+    
+    Returns:
+        weighted_query_time (float)
+    """
+    # 1. 尾部时间
+    last_time = timestamps[-1]
+
+    # 2. 头部时间
+    first_time = timestamps[0]
+
+    # 3. CLIP文本匹配时间
+    if clip_model is not None and clip_processor is not None:
+        best_idx = get_best_query_time_with_clip_text(clip_model, clip_processor, documents, query_text)
+        clip_time = timestamps[best_idx]
+    else:
+        clip_time = last_time  # fallback
+
+    # 计算加权平均 query_time
+    weighted_query_time = w1 * last_time + w2 * first_time + w3 * clip_time
+    return weighted_query_time
+
+
 def retrieve_documents_with_temporal_rankning(documents, queries, alpha=0.1, max_k=10):
     """
     Retrieve documents using GMM-based automatic top-k selection.
@@ -93,7 +151,10 @@ def retrieve_documents_with_temporal_rankning(documents, queries, alpha=0.1, max
     tokenized_query = query_text.split()
     bm25_scores = np.array(bm25.get_scores(tokenized_query))  # shape: [N]
     timestamps = np.arange(len(documents))
-    query_time = timestamps[-1]
+    query_time = get_weighted_query_time(
+        clip_model, clip_processor, documents, query_text, timestamps, 
+        w1=1/3, w2=1/3, w3=1/3
+    )
     # Temporal decay weights: exp(-α * |T_q - T_i|)
     timestamps = np.array(timestamps)
     time_diffs = np.abs(timestamps - query_time)
